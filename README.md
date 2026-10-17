@@ -1,0 +1,719 @@
+# Comprehensive Guide: AMD/Xilinx Zynq UltraScale+ Embedded Design Flow
+## Board Target: Trenz Electronic TE0802 (XCZU2 / Zynq UltraScale+ MPSoC)
+
+This document provides a complete, step-by-step workflow for designing, building, packaging, and deploying a bare-metal application on the **Trenz TE0802 Zynq UltraScale+** board using **Vivado** and **Vitis Unified IDE**.
+
+---
+
+## Table of Contents
+1. [Prerequisites & Hardware Overview](#1-prerequisites--hardware-overview)
+2. [Step 1: Vivado - Hardware Design & Exporting `.xsa`](#step-1-vivado---hardware-design--exporting-xsa)
+3. [Step 2: Vitis - Platform Component Creation](#step-2-vitis---platform-component-creation)
+4. [Step 3: Vitis - Generating PMU Firmware (PMUFW) & FSBL](#step-3-vitis---generating-pmu-firmware-pmufw--fsbl)
+5. [Step 4: Vitis - Creating the Hello World Application](#step-4-vitis---creating-the-hello-world-application)
+6. [Step 5: Testing Application via JTAG](#step-5-testing-application-via-jtag)
+7. [Step 6: Gathering Binaries & Creating the `.bif` File](#step-6-gathering-binaries--creating-the-bif-file)
+8. [Step 7: Generating `BOOT.BIN` using `bootgen`](#step-7-generating-bootbin-using-bootgen)
+9. [Step 8: Flashing `BOOT.BIN` to QSPI Flash](#step-8-flashing-bootbin-to-qspi-flash)
+10. [Step 9: Board Boot Configuration & Persistent Execution](#step-9-board-boot-configuration--persistent-execution)
+11. [Troubleshooting & FAQs](#troubleshooting--faqs)
+12. [RPU Secondary Bootloader Flow](#rpu-secondary-bootloader-flow)
+
+---
+
+## 1. Prerequisites & Hardware Overview
+
+### Software Requirements
+* **AMD Vivado Design Suite** (2023.x / 2024.x / 2025.x)
+* **Vitis Unified IDE**
+* **Serial Terminal Emulator** (PuTTY, Tera Term, or Vitis Terminal)
+
+### Hardware Setup
+* **Board:** Trenz Electronic TE0802
+* **Cable:** Micro-USB cable connected to connector **`J8`** (bottom-left of the board for JTAG/UART).
+* **Power:** 5V DC Power Adapter connected to **`J9`**.
+
+### DIP Switch Reference (Boot Switch `S1`)
+Located at the middle-left of the board (above the blue VGA connector):
+
+| Mode | Switch `S1-1` (MODE0) | Switch `S1-2` (MODE1) | Switch `S1-3` | Switch `S1-4` |
+| :--- | :--- | :--- | :--- | :--- |
+| **JTAG Mode** | **OFF** | **OFF** | OFF | OFF |
+| **QSPI Boot Mode** | **ON** | **OFF** | OFF | OFF |
+| **SD Card Boot** | **ON** | **ON** | OFF | OFF |
+
+---
+
+## Step 1: Vivado - Hardware Design & Exporting `.xsa`
+
+1. **Create New Project:**
+   * Open **Vivado**.
+   * Select **Create Project** -> Name your project (e.g., `te0802_hardware`).
+   * Select **RTL Project** (Do not specify sources at this time).
+   * Select your target part (e.g., `xczu2eg-sfva625-1-e` or search for TE0802 board preset if installed).
+
+2. **Create Block Design:**
+   * Click **IP Integrator** -> **Create Block Design**.
+   * Add the **Zynq UltraScale+ MPSoC** IP block (`psu_cortexa53_0`).
+   * Click **Run Block Automation** to apply board default presets.
+
+3. **Configure Processing System (PS):**
+   * Double-click the **Zynq UltraScale+ MPSoC** IP block.
+   * **Peripheral I/O Pins:**
+     * Enable **UART0** or **UART1** (mapped to MIO pins for console output).
+     * Enable **QSPI** (Quad SPI Flash controller, single x4).
+   * **DDR Configuration:** Ensure DDR4 memory settings match TE0802 specifications.
+   * Click **OK**.
+
+4. **Generate HDL Wrapper & Bitstream:**
+   * In the Block Design panel, right-click `design_1` -> **Create HDL Wrapper** (select *Let Vivado manager wrapper and auto-update*).
+   * Click **Generate Bitstream** in the Flow Navigator.
+   * Wait for synthesis, implementation, and bitstream generation to complete successfully.
+
+5. **Export Hardware (`.xsa`):**
+   * Go to **File** -> **Export** -> **Export Hardware...**
+   * Choose **Include bitstream**.
+   * Export location: Save to your project folder or workspace directory.
+   * Click **Finish**. (Output: `design_1_wrapper.xsa`).
+
+---
+
+## Step 2: Vitis - Platform Component Creation
+
+1. Launch **Vitis Unified IDE**.
+2. Set your workspace path (e.g., `C:\internship_spulusitis_workspace`). *Note: Avoid paths containing OneDrive or spaces.*
+3. Click **Create Platform Component**.
+4. Set Name: `hello` (or `te0802_platform`).
+5. Set Hardware Design: Browse and select the exported `design_1_wrapper.xsa` file.
+6. Set Operating System: **standalone**.
+7. Set Processor: **`psu_cortexa53_0`**.
+8. Click **Finish**.
+9. Build Platform:
+   * In the **FLOW** panel (bottom-left), ensure `hello` platform is selected.
+   * Click **Build** (or right-click `hello` in Vitis Explorer -> **Build Component**).
+
+---
+
+## Step 3: Vitis - Generating PMU Firmware (PMUFW) & FSBL
+
+### First Stage Bootloader (FSBL)
+The FSBL is generated automatically inside your platform component:
+* Output location: `<workspace>/hello/export/hello/sw/boot/fsbl.elf`
+
+### PMU Firmware (PMUFW)
+1. Click **File** -> **New Component** -> **Application**.
+2. Name: `zynqmp_pmufw`.
+3. Select Platform: Select the `hello` platform created in Step 2.
+4. Select Domain/Processor: **`psu_pmu_0`**.
+5. Select Template: **ZynqMP PMU Firmware**.
+6. Click **Finish**.
+7. Build PMUFW: Select `zynqmp_pmufw` in the FLOW panel and click **Build**.
+   * Output location: `<workspace>/zynqmp_pmufw/build/zynqmp_pmufw.elf`
+
+---
+
+## Step 4: Vitis - Creating the Hello World Application
+
+1. Click **File** -> **New Component** -> **Application**.
+2. Name: `hello_world_component`.
+3. Select Platform: `hello`.
+4. Select Target Processor: **`psu_cortexa53_0`** (Domain: `standalone_psu_cortexa53_0`).
+5. Select Template: **Hello World**.
+6. Click **Finish**.
+7. **Build Application:**
+   * In the FLOW panel, select `hello_world_component` and click **Build**.
+   * Output location: `<workspace>/hello_world_component/build/hello_world_component.elf`
+
+---
+
+## Step 5: Testing Application via JTAG
+
+Before flashing to QSPI, verify that the application runs over JTAG:
+
+1. **Set DIP Switch `S1` to JTAG Mode:**
+   * `S1-1` = **OFF**
+   * `S1-2` = **OFF**
+2. **Connect Hardware:**
+   * Power on the board.
+   * Ensure Micro-USB cable is connected to `J8`.
+3. **Open Serial Terminal:**
+   * Open Device Manager to find the UART COM port number.
+   * Open PuTTY / Tera Term / Vitis Terminal at **115200 baud**, 8 data bits, 1 stop bit, no parity.
+4. **Run Application in Vitis:**
+   * In Vitis FLOW panel, select `hello_world_component`.
+   * Click **Run** (▶).
+   * Check your terminal screen for output:
+     ```text
+     Hello World
+     ```
+
+---
+
+## Step 6: Gathering Binaries & Creating the `.bif` File
+
+Create a dedicated folder for boot image generation (e.g., `C:\internship_spulusoot_image\`).
+
+### 1. Copy Binary Files
+Copy the following 4 files into your `boot_image` directory:
+
+1. **`fsbl.elf`** from `<workspace>/hello/export/hello/sw/boot/fsbl.elf`
+2. **`zynqmp_pmufw.elf`** from `<workspace>/zynqmp_pmufw/build/zynqmp_pmufw.elf`
+3. **`design_1_wrapper.bit`** from `<workspace>/hello_world_component/_ide/bitstream/design_1_wrapper.bit` (or from Vivado export)
+4. **`hello_world_component.elf`** from `<workspace>/hello_world_component/build/hello_world_component.elf`
+
+### 2. Create `bootimage.bif`
+In your `boot_image` folder, create a text file named `bootimage.bif` with the following content:
+
+```bif
+//arch = zynqmp; split = false; format = BIN
+the_ROM_image:
+{
+    [bootloader, destination_cpu = a53-0] fsbl.elf
+    [pmufw_image] zynqmp_pmufw.elf
+    [destination_device = pl] design_1_wrapper.bit
+    [destination_cpu = a53-0] hello_world_component.elf
+}
+```
+
+---
+
+## Step 7: Generating `BOOT.BIN` using `bootgen`
+
+1. Open **AMD Vitis Command Prompt** or regular Windows Command Prompt with AMD environment loaded.
+2. Navigate to your boot directory:
+   ```cmd
+   cd C:\internship_spulusoot_image
+   ```
+3. Execute `bootgen`:
+   ```cmd
+   bootgen -image bootimage.bif -arch zynqmp -o BOOT.BIN -w on
+   ```
+4. Verify that `BOOT.BIN` was created in the directory.
+
+---
+
+## Step 8: Flashing `BOOT.BIN` to QSPI Flash
+
+1. **Ensure Board is in JTAG Mode:**
+   * Switch `S1-1` = **OFF**
+   * Switch `S1-2` = **OFF**
+   * Board powered ON, Micro-USB connected.
+
+2. **Run `program_flash` Command:**
+   Open command prompt inside `C:\internship_spulusoot_image\` and execute:
+   ```cmd
+   program_flash -f BOOT.BIN -fsbl fsbl.elf -flash_type qspi-x4-single -verify
+   ```
+
+3. **Verify Output:**
+   Look for the final verification success lines in console:
+   ```text
+   Verify Operation successful.
+   Flash Operation Successful
+   ```
+
+---
+
+## Step 9: Board Boot Configuration & Persistent Execution
+
+1. Power **OFF** the board.
+2. Change DIP switch **`S1`** to **QSPI Boot Mode**:
+   * **`S1-1` (MODE0):** **ON** (slide switch up towards label)
+   * **`S1-2` (MODE1):** **OFF**
+   * **`S1-3`:** **OFF**
+   * **`S1-4`:** **OFF**
+3. Open your Serial Terminal on the UART COM port at **115200 baud**.
+4. Power **ON** the board (or press the red reset button **`BTN6`**).
+5. The Zynq UltraScale+ processor will automatically fetch `BOOT.BIN` from QSPI flash, execute FSBL, load PMUFW and bitstream, and output:
+   ```text
+   Hello World
+   ```
+---
+## 🚀 System Architecture & Boot Flow
+
+This repository contains a custom **FSBL-style secondary bootloader** written in C for the **Real-Time Processing Unit (RPU / ARM Cortex-R5)** on AMD/Xilinx **Zynq UltraScale+ MPSoC** devices.
+
+The RPU loader acts as an orchestration processor: it retrieves application images from non-volatile QSPI flash, stage-loads them into System RAM (DDR), verifies memory integrity, and hands off execution to the **Application Processing Unit (APU / ARM Cortex-A53)** via the **Platform Management Unit (PMU)**.
+
+---
++-------------------------------------------------------------------------------------+
+|                                Zynq UltraScale+ MPSoC                               |
+|                                                                                     |
+|  +--------------------+   1. Read PL Bitstream   +-------------------------------+  |
+|  |     QSPI Flash     | <----------------------  |        RPU Bootloader         |  |
+|  | (Bitstream 0x0040) | -----------------------> |          (Cortex-R5)          |  |
+|  |   (APU App 0x0020) |   2. Read APU App        +-------------------------------+  |
+|  +--------------------+                                   |               |         |
+|                                         3. CSU DMA / PCAP |               | 4. Load |
+|                                                           v               v Payload |
+|  +--------------------+   5. Request Wakeup     +-----------------------------------+ |
+|  |  APU Core 0 (A53)  | <---------------------- |         System RAM (DDR)          | |
+|  |  (Executes App)    |   (via PMUFW & XilPM)   |  PL Temp: 0x2000000 / APU: 0x1000 | |
+|  +--------------------+                         +-----------------------------------+ |
++-------------------------------------------------------------------------------------+
+
+
+### 🛠️ Key Features & Execution Pipeline
+
+1. **DDR Pre-Flight Verification**
+   * Writes a test pattern (`0xDEADBEEF`) to target RAM (`0x10000000`) to confirm DDR is initialized, clocked, and writable before attempting transfers.
+
+2. **Stage 1: PL Bitstream Configuration**
+   * Reads the raw `led.bin` file from QSPI offset `0x00400000` into the DDR buffer (`0x20000000`).
+   * Flushes the D-Cache before handing the buffer to the FPGA configuration driver.
+   * Calls `XFpga_BitStream_Load()` with the complete raw bitstream buffer.
+   * The `xilfpga` library handles bitstream validation, including recognition of the Xilinx configuration sync word (`0xAA995566`, or its byte-swapped representation `0x665599AA`), and transfers the stream to the PL.
+   * Applies the generated AFI, PL isolation-removal, and fabric-reset configuration routines.
+
+3. **Stage 2: APU Application Loading & Header Parsing**
+   * Reads Partition Header from QSPI flash offset `0x00200000`.
+   * **Header Valid:** Dynamically parses payload load address, entry execution vector (`RVBAR`), payload size, and flash offset.
+   * **Header Fallback Mode:** Defaults to target address `0x10000000` and `512 KB` payload length.
+
+4. **Buffered Memory Transfer & Cache Coherency**
+   * Loads the payload image into DDR in chunked transfers (`QSPI_READ_CHUNK`).
+   * Flushes D-Cache (`Xil_DCacheFlushRange`) and executes ARM memory barriers (`dsb()`, `isb()`) to guarantee physical memory coherence prior to CPU handoff.
+   * Re-calculates and logs a 32-bit payload word checksum over the loaded RAM range.
+
+5. **Inter-Processor APU Boot Orchestration**
+   * Initializes **IPI** and **XilPM** (`XPm_InitXilpm`) channels to communicate with the **Platform Management Unit Firmware (PMUFW)**.
+   * Calls `XPm_ForcePowerDown` to force APU Core 0 into reset.
+   * Issues `XPm_RequestWakeUp` to program the APU entry address (`RVBAR`) and release Cortex-A53 Core 0 from reset to execute the booted binary.
+
+---
+
+### ⚙️ Default Hardware Configurations
+
+| Parameter | Address / Value | Description |
+| :--- | :--- | :--- |
+| **QSPI Device ID** | `0` | Default QSPI controller instance |
+| **APU Flash Offset** | `0x00200000` | 2 MB offset where APU application image resides |
+| **Bitstream Flash Offset** | `0x00400000` | 4 MB offset where PL Bitstream resides (~5.4 MB) |
+| **APU DDR Target** | `0x10000000` | Target RAM location for A53 execution (256 MB) |
+| **Bitstream DDR Temp** | `0x20000000` | Staging RAM buffer for PL programming (512 MB) |
+| **Transfer Chunk Size** | `0x1000` | 4 KB polled QSPI transfer buffer |
+## Troubleshooting & FAQs
+
+### 1. `no such file or directory: fsbl.elf`
+* **Cause:** The project directory was moved, breaking relative paths in `launch.json`.
+* **Fix:** In Vitis, go to `_ide -> launch.json` for your application, click **Browse** next to **FSBL File**, and point to the valid `fsbl.elf` location.
+
+### 2. Warning: `Flash Mismatched` during `program_flash`
+* **Cause:** Selected flash generic type (`qspi-x4-single`) differs slightly from detected ID (`n25q256a`).
+* **Fix:** This is normal and harmless for Micron/Numonyx chips on Trenz boards as long as write and verify pass.
+
+### 3. No text output on UART terminal after boot
+* Check Device Manager for dual FTDI COM ports and switch terminal to the other COM port.
+* Verify DIP switch `S1` is strictly set to `S1-1` = ON, `S1-2` = OFF.
+* Press Reset button `BTN6` after opening terminal software.
+
+---
+
+## RPU Secondary Bootloader Flow
+
+This section documents the working custom boot flow implemented in
+`rpu_hello_app/src/main.c`. The RPU application is started by the FSBL and
+then becomes responsible for configuring the PL and starting the APU
+application.
+
+### Boot responsibilities
+
+The boot chain is:
+
+1. The BootROM loads `BOOT.BIN` from QSPI.
+2. The FSBL initializes the processing system, DDR, and board peripherals.
+3. The FSBL loads and starts PMUFW.
+4. The FSBL loads and starts the RPU application.
+5. The RPU reads `led.bin` from QSPI and stages it in DDR.
+6. The RPU configures the FPGA through `xilfpga` and PMUFW.
+7. The RPU reads `apu.bin` from QSPI and stages it in DDR.
+8. The RPU requests PMUFW to power down and wake A53-0 at the APU entry address.
+
+### QSPI layout
+
+The current project uses three independent files in QSPI flash:
+
+| QSPI offset | File | Purpose |
+| :--- | :--- | :--- |
+| `0x00000000` | `BOOT.BIN` | FSBL, PMUFW, and RPU boot image |
+| `0x00200000` | `apu.bin` | Raw APU application binary |
+| `0x00400000` | `led.bin` | Raw FPGA configuration binary |
+
+The files must not overlap. The `0x00400000` value is the start of the
+separate `led.bin` file; it is not a partition offset inside `BOOT.BIN`.
+
+### Creating `BOOT.BIN`
+
+For this project, `BOOT.BIN` contains PMUFW, the A53 FSBL, and the RPU
+secondary bootloader. The BIF file should contain:
+
+```bif
+the_ROM_image:
+{
+   [pmufw_image] zynqmp_pmufw.elf
+   [bootloader, destination_cpu = a53-0] zynqmp_fsbl.elf
+   [destination_cpu = r5-0] rpu_hello_app.elf
+}
+```
+
+Generate the boot image with:
+
+```cmd
+bootgen -arch zynqmp -image bootimage.bif -o BOOT.BIN -w on
+```
+
+`BOOT.BIN` is programmed at QSPI offset `0x00000000`. It does not contain
+`led.bin` or `apu.bin`; the RPU loads those files separately from their own
+QSPI offsets.
+
+### Creating `apu.bin`
+
+Build `hello_world_component.elf` in Vitis, then convert the ELF into a raw
+binary using the AArch64 GNU toolchain:
+
+```cmd
+aarch64-none-elf-objcopy -O binary hello_world_component.elf apu_app.bin
+```
+
+The generated raw binary is the APU payload. Rename it to `apu.bin` if needed
+and program it at QSPI offset `0x00200000`.
+
+### Creating the FPGA binary
+
+The RPU expects `led.bin` to contain the raw FPGA configuration stream. The
+source file is normally `led.bit`, generated by Vivado. Use the following
+procedure to create the correct file:
+
+1. Copy the Vivado-generated `led.bit` into a working directory.
+2. In the same directory, create `bitstream.bif` with only the bitstream:
+
+```bif
+all:
+{
+   led.bit
+}
+```
+
+3. Run `bootgen` from the AMD/Vitis command prompt:
+
+```cmd
+bootgen -arch zynqmp -image bitstream.bif -process_bitstream bin
+```
+
+4. Use the generated `led.bin` file and program it at QSPI offset
+   `0x00400000`.
+
+The resulting file must be the raw bitstream binary, not `led.bit` renamed to
+`led.bin` and not a complete boot image. Check its size and set
+`BITSTREAM_DEFAULT_SIZE` in `rpu_hello_app/src/main.c` to the same size in
+bytes.
+
+Do not use this BIF for the separate raw file:
+
+```bif
+all:
+{
+   [destination_device=pl] led.bit
+}
+```
+
+That form creates a bootgen PL partition image with boot-image metadata. It
+is appropriate when the bitstream is included as a partition in `BOOT.BIN`,
+but it should not be sent directly to the RPU raw-bitstream loader.
+
+### RPU PL configuration sequence
+
+The RPU performs these operations for the PL:
+
+1. Initialize the QSPI controller.
+2. Read `led.bin` from `0x00400000` in 4 KB chunks.
+3. Copy the data to the DDR staging address `0x20000000`.
+4. Flush the D-Cache and execute memory barriers.
+5. Run the generated `psu_afi_config()` routine.
+6. Call `XFpga_BitStream_Load()` with the staged address and exact binary size.
+7. Run the generated `psu_ps_pl_isolation_removal_data()` routine.
+8. Run the generated `psu_ps_pl_reset_config_data()` routine to release the
+   EMIO fabric reset.
+
+The generated board initialization source is taken from the hardware export:
+
+```text
+hello/hw/psu_init.c
+hello/hw/psu_init.h
+```
+
+`rpu_hello_app/src/UserConfig.cmake` adds `psu_init.c` to the RPU build.
+
+### RPU APU application sequence
+
+After PL configuration, the RPU loads the APU application:
+
+1. Read `apu.bin` from QSPI offset `0x00200000`.
+2. Copy it to DDR address `0x10000000`.
+3. Flush the D-Cache so A53-0 sees the complete image.
+4. Force A53-0 into a powered-down/reset state through PMUFW.
+5. Request PMUFW to set the A53-0 reset vector to `0x10000000`.
+6. Release A53-0 and begin executing `apu.bin`.
+
+For the raw-file layout, the RPU uses the configured default APU address and
+size. The APU binary should be linked for the DDR address expected by the
+application and must fit within the reserved DDR region.
+
+### Build and deploy procedure
+
+1. Build the hardware platform and export the XSA with the bitstream included.
+2. Build FSBL and PMUFW in Vitis.
+3. Build `rpu_hello_app` in Vitis.
+4. Confirm that the RPU application links the generated `hello/hw/psu_init.c`.
+5. Generate raw `led.bin` from `led.bit` using the bitstream-only BIF above.
+6. Prepare `apu.bin` as the raw APU application binary.
+7. Program the files into QSPI at the following offsets:
+
+   ```text
+   BOOT.BIN  -> 0x00000000
+   apu.bin   -> 0x00200000
+   led.bin   -> 0x00400000
+   ```
+
+8. Set the TE0802 boot switches to QSPI boot mode.
+9. Open the UART terminal at 115200 baud and reset or power-cycle the board.
+10. Confirm the RPU messages for DDR, QSPI, FPGA configuration, and APU wakeup.
+
+### Expected RPU console messages
+
+Successful operation should include messages similar to:
+
+```text
+RPU: DDR OK
+RPU: QSPI controller initialized OK
+RPU: Loading Partition Payload from QSPI
+    Flash offset : 0x00400000
+RPU: SUCCESS - FPGA configured and running!
+RPU: PL Post-Config complete! Fabric and clock active.
+RPU: APU Core 0 successfully booted at 0x10000000!
+```
+
+The `XFpga_BitStream_Load()` success message confirms that the configuration
+transfer was accepted. The LED logic also requires the generated AFI,
+isolation, clock, and fabric-reset sequence to complete successfully.
+
+### Problems encountered and solutions
+
+#### 1. The RPU loaded the wrong bitstream address
+
+**Problem:** The first implementation assumed that the PL payload was inside
+`BOOT.BIN` and used a partition offset such as `0x49840`. This offset came from
+the FSBL log and is not a permanent address.
+
+**Solution:** The project stores `led.bin` as a separate file in QSPI. The RPU
+therefore reads it from the fixed file start address:
+
+```text
+BOOT.BIN  -> 0x00000000
+apu.bin   -> 0x00200000
+led.bin   -> 0x00400000
+```
+
+The value `0x49840` must only be used when parsing a PL partition contained in
+a boot image. It is not used by the current separate-file layout.
+
+#### 2. `led.bin` was generated as a boot partition image
+
+**Problem:** Using this BIF for the separate RPU file adds boot-image
+partition metadata:
+
+```bif
+all:
+{
+   [destination_device=pl] led.bit
+}
+```
+
+Sending that complete image to `XFpga_BitStream_Load()` can prevent the FPGA
+configuration stream from being interpreted correctly.
+
+**Solution:** Generate the separate file as a raw bitstream binary:
+
+```bif
+all:
+{
+   led.bit
+}
+```
+
+Then run:
+
+```cmd
+bootgen -arch zynqmp -image bitstream.bif -process_bitstream bin
+```
+
+Program the resulting raw `led.bin` at `0x00400000`.
+
+#### 3. FPGA configuration reported success but the LED did not blink
+
+**Problem:** `XFpga_BitStream_Load()` returned success, but the PL design was
+still inactive. The RPU used custom register writes for AFI, PL power,
+isolation, and fabric reset instead of the board-generated FSBL sequence.
+
+**Solution:** Use the generated hardware initialization routines in this
+order:
+
+```c
+psu_afi_config();
+XFpga_BitStream_Load(...);
+psu_ps_pl_isolation_removal_data();
+psu_ps_pl_reset_config_data();
+```
+
+The last routine applies the EMIO fabric reset sequence. The generated source
+must also be linked into the RPU application:
+
+```text
+hello/hw/psu_init.c
+hello/hw/psu_init.h
+```
+
+#### 4. `psu_init.h` was not found by the editor
+
+**Problem:** Vitis could compile with a configured include directory, but the
+editor language service could not resolve `psu_init.h`.
+
+**Solution:** Include the generated header using the workspace-relative path
+used by the project:
+
+```c
+#include "../../hello/hw/psu_init.h"
+```
+
+#### 5. CMake could not find `psu_init.c`
+
+**Problem:** The initial CMake path used `../hello/hw`, which resolved to a
+nonexistent directory under `rpu_hello_app` because Vitis configures the
+component with `rpu_hello_app/src` as its source directory.
+
+**Solution:** Use two parent-directory levels in
+`rpu_hello_app/src/UserConfig.cmake`:
+
+```cmake
+set(USER_INCLUDE_DIRECTORIES
+   "${CMAKE_SOURCE_DIR}/../../hello/hw"
+)
+
+set(USER_COMPILE_SOURCES
+   "${CMAKE_SOURCE_DIR}/../../hello/hw/psu_init.c"
+)
+```
+
+#### 6. Vitis failed during the post-build size step
+
+**Problem:** Compilation and linking completed, but the build reported that
+`armr5-none-eabi-size` was not recognized.
+
+**Solution:** Add the Vitis ARM R5 toolchain directory to `PATH` before
+building from PowerShell:
+
+```powershell
+$env:Path = "C:\AMDDesignTools\2025.2\gnu\armr5\nt\gcc-arm-none-eabi\bin;$env:Path"
+```
+
+This allows the generated Vitis post-build command to run the size utility.
+
+#### 7. The bitstream size did not match the file being loaded
+
+**Problem:** The RPU reads a configured number of bytes. If that value is
+larger or smaller than the actual raw `led.bin`, the FPGA receives incomplete
+data or unrelated bytes from the following QSPI region.
+
+**Solution:** Set `BITSTREAM_DEFAULT_SIZE` in `rpu_hello_app/src/main.c` to the
+exact byte size of the raw `led.bin`, and ensure the file fits before the next
+QSPI image:
+
+```c
+#define BITSTREAM_DEFAULT_SIZE 0x0054F89CU
+```
+
+The value must be updated whenever `led.bit` is regenerated and the resulting
+`led.bin` size changes.
+
+### FSBL size optimization
+
+The FSBL must fit in the available on-chip memory. If the FSBL size is too
+large for the OCM region, reduce unused features first and adjust the linker
+memory settings only as required.
+
+#### Exclude unused boot media
+
+For this project, QSPI is the only boot storage device. Keep QSPI support
+enabled and exclude boot media that are not used. In the FSBL configuration
+file `zynqmp_fsbl/src/xfsbl_config.h`, use settings such as:
+
+```c
+#define FSBL_NAND_EXCLUDE
+#define FSBL_SD_EXCLUDE
+#define FSBL_USB_EXCLUDE
+```
+
+The generated FSBL configuration also provides value-style options. Set the
+unused features to `1` and leave QSPI enabled:
+
+```c
+#define FSBL_NAND_EXCLUDE_VAL 1U
+#define FSBL_SD_EXCLUDE_VAL   1U
+#define FSBL_USB_EXCLUDE_VAL  1U
+#define FSBL_QSPI_EXCLUDE_VAL 0U
+```
+
+Do not define `FSBL_QSPI_EXCLUDE` or set `FSBL_QSPI_EXCLUDE_VAL` to `1U` when
+booting from QSPI. Otherwise the FSBL cannot read `BOOT.BIN` partitions.
+
+#### Exclude FSBL features handled by the RPU
+
+The current boot architecture loads the PL through the RPU, not through a PL
+partition in `BOOT.BIN`. Therefore, if the FSBL configuration does not need
+any other bitstream partition, the FSBL bitstream support can be excluded:
+
+```c
+#define FSBL_BS_EXCLUDE_VAL 1U
+```
+
+Only enable this after confirming that `BOOT.BIN` does not contain a PL
+partition. PMUFW and the RPU partition load must remain enabled, so do not
+exclude general partition loading:
+
+```c
+#define FSBL_PARTITION_LOAD_EXCLUDE_VAL 0U
+```
+
+Other optional features can be disabled only when they are not required by
+the product, for example secure authentication, TPM, performance logging,
+watchdog support, DDR self-refresh support, or early handoff. Review each
+option in `xfsbl_config.h` before disabling it because security and recovery
+behavior may depend on it.
+
+#### Increase or reduce stack and heap sizes
+
+The FSBL linker script defines `_STACK_SIZE` and `_HEAP_SIZE`. The R5 linker
+template is `zynqmp_fsbl/src/linker_files/lscript_r5.ld.in`; the generated
+project linker script is normally `zynqmp_fsbl/src/lscript.ld`.
+
+If the linker reports a stack or heap overflow, increase the values in the
+FSBL linker configuration, for example:
+
+```text
+_STACK_SIZE = 0x2000;
+_HEAP_SIZE  = 0x2000;
+```
+
+If the FSBL is too large for OCM, increasing stack and heap is not a solution:
+reduce them to the minimum required by the application and remove unused FSBL
+features first. Always rebuild the FSBL and inspect the generated ELF size
+after changing these values.
+
+#### Recommended order
+
+1. Exclude unused media such as SD, NAND, and USB.
+2. Exclude FSBL PL support when PL loading is exclusively performed by the RPU.
+3. Disable optional features that are not required, such as TPM or debug/performance code.
+4. Reduce unnecessary stack and heap reservations if memory is tight.
+5. Increase stack or heap only when a linker error or runtime evidence proves it is necessary.
+6. Rebuild FSBL, regenerate `BOOT.BIN`, and test the complete QSPI boot flow.

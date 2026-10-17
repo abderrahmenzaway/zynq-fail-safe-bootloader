@@ -1,0 +1,4 @@
+domain_path: C:\internship_spulus\vitis_workspace\hello\export\hello\sw\psu_pmu_0
+app_src_dir: C:\AMDDesignTools\2025.2\Vitis\data\embeddedsw\lib\sw_apps\zynqmp_pmufw
+template: zynqmp_pmufw
+lang: c

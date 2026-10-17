@@ -1,0 +1,6 @@
+the_ROM_image:
+{
+    [pmufw_image] zynqmp_pmufw.elf
+    [bootloader, destination_cpu = a53-0] zynqmp_fsbl.elf
+    [destination_cpu = r5-0] rpu_hello_app.elf
+}

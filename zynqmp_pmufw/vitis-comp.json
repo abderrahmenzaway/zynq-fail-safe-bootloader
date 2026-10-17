@@ -1,0 +1,18 @@
+{
+  "name": "zynqmp_pmufw",
+  "type": "HOST",
+  "platform": "hello",
+  "domain": "psu_pmu_0",
+  "cpuInstance": "psu_pmu_0",
+  "cpuType": "psu_pmu",
+  "os": "standalone",
+  "configuration": {
+    "componentType": "HOST",
+    "hostToolchainConfigurations": []
+  },
+  "domainRealName": "psu_pmu_0",
+  "useSysrootToolchain": false,
+  "applicationFlow": "EMBEDDED",
+  "template": "zynqmp_pmufw",
+  "templateFlow": "VITIS"
+}

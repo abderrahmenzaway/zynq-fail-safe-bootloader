@@ -1,0 +1,18 @@
+#include "xpciepsu.h"
+
+XPciePsu_Config XPciePsu_ConfigTable[] __attribute__ ((section (".drvcfg_sec"))) = {
+
+	{
+		"xlnx,nwl-pcie-2.11", /* compatible */
+		0xfd0e0000,
+		0xfd480000,
+		0x8000000000, /* reg */
+		0xe0000000,
+		0xefffffff, /* ranges */
+		0xfd0f0000, /* xlnx,dma-addr */
+		0x1 /* xlnx,port-type */
+	},
+	 {
+		 NULL
+	}
+};

@@ -1,0 +1,37 @@
+# Vitis and tool-generated directories
+**/build/
+**/export/
+**/logs/
+**/_ide/logs/
+**/_ide/.wsdata/
+.Xil/
+.cache/
+
+# Generated build files
+*.o
+*.d
+*.obj
+*.a
+*.elf
+*.out
+*.bin
+*.bit
+*.pdi
+*.xsa
+*.xpfm
+
+# Generated metadata and temporary files
+*.log
+*.lock
+*.ninja
+*.ninja_*
+*.check_cache
+*.buildstatus
+*.checksum
+*.size
+*.clangd
+.vitisWorkspace.json
+
+# Operating-system files
+.DS_Store
+Thumbs.db
