@@ -35,3 +35,5 @@
 # Operating-system files
 .DS_Store
 Thumbs.db
+# Vitis IDE journals
+_ide/workspace_journal*.py
