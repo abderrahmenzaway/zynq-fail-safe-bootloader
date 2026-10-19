@@ -37,3 +37,7 @@
 Thumbs.db
 # Vitis IDE journals
 _ide/workspace_journal*.py
+
+# Tool reports and local build databases (contain machine-specific paths)
+dfx_runtime.txt
+compile_commands.json
